@@ -126,6 +126,8 @@ static void IRAM_ATTR psnee_sqck_handler(void* arg) {
     psnee.event_tx_prev = esp_timer_get_time();
 }
 
+
+// borrowed from AttyNee. Bitmagic to get to the SCEX strings stored in flash (because Harvard architecture)
 bool psnee_readBit(int index, const unsigned char *ByteSet)
 {
     int byte_index = index >> 3;
@@ -177,7 +179,7 @@ void psnee_injector_task(void * pvParameters) {
         psnee.pu22inject = false;
         switch (state) {
             case WaitForQueue:
-                if(xQueueReceive(psnee.gpio_evt_queue, &io_num, 0)) {
+                if(xQueueReceive(psnee.gpio_evt_queue, &io_num, portMAX_DELAY)) {
                     DEBUG1(">> PsNee injection starting ...\n");
                     state = StartInject;
                     psnee.injection_running = true;
@@ -234,6 +236,7 @@ void psnee_setup(bool pu22mode) {
     psnee.pu22mode = pu22mode;
     psnee.gpio_evt_queue = xQueueCreate(1, sizeof(uint32_t));
     psnee.event_tx_prev = esp_timer_get_time();
+    //xTaskCreatePinnedToCore(psnee_injector_task, "PsNee", 2048, NULL, 10, NULL, 0);
     xTaskCreate(psnee_injector_task, "PsNee", 2048, NULL, 10, NULL);
     gpio_set_intr_type((gpio_num_t) PSNEE_SQCK, GPIO_INTR_POSEDGE);
     gpio_set_intr_type((gpio_num_t) PSNEE_GATE_WFCK, GPIO_INTR_ANYEDGE);
@@ -241,7 +244,7 @@ void psnee_setup(bool pu22mode) {
     gpio_isr_handler_add((gpio_num_t) PSNEE_SQCK, psnee_sqck_handler, (void*) PSNEE_SQCK);
     gpio_isr_handler_add((gpio_num_t) PSNEE_GATE_WFCK, psnee_wfck_handler, (void*) PSNEE_GATE_WFCK);
 
-    DEBUG1(">> PsNee starting in %s mode\n", psnee.pu22mode ? "PU-22 and newer" : "PU-20 and older");
+    DEBUG1(">> PsNee starting in %s mode\n", psnee.pu22mode ? "PU-22 and newer" : "PU-20 and older"); 
 }
 
 #endif
