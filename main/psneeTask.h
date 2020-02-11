@@ -55,13 +55,22 @@ typedef struct {
     int64_t event_tx_prev;
     bool pu22inject;
     bool pu22mode;
+    bool modeDetected;
+    unsigned int wfck_highs;
+    unsigned int wfck_lows;
 } PsNee;
 
-enum PsNee_States { WaitForQueue, StartInject, InjectSCEE, InjectSCEA, InjectSCEI, EndInject };
-static PsNee psnee;
+enum PsNee_States { WaitForMode, WaitForQueue, StartInject, InjectSCEE, InjectSCEA, InjectSCEI, EndInject };
+static PsNee psnee = { NULL, false, 0, false, false, false, 0, 0 };
 
 static void IRAM_ATTR psnee_wfck_handler(void* arg) {
-    if (psnee.pu22inject) {
+    if (!psnee.modeDetected) {
+        if (gpio_get_level(PSNEE_GATE_WFCK)) {
+            psnee.wfck_highs++;
+        } else {
+            psnee.wfck_lows++;
+        }
+    } else if (psnee.pu22inject) {
         gpio_set_level(PSNEE_DATA, gpio_get_level(PSNEE_GATE_WFCK)); // output wfck signal on PSNEE_DATA pin
     }
 }
@@ -167,8 +176,8 @@ bool psnee_inject_SCEX(char region, uint8_t bit_counter)
 }
 
 void psnee_injector_task(void * pvParameters) {
-    
-    enum PsNee_States state = WaitForQueue;
+
+    enum PsNee_States state = WaitForMode;
     int loopcounter;
     uint32_t io_num;
     TickType_t xDelay = DELAY_BETWEEN_BITS / portTICK_PERIOD_MS;
@@ -178,6 +187,13 @@ void psnee_injector_task(void * pvParameters) {
     while (true) {
         psnee.pu22inject = false;
         switch (state) {
+            case WaitForMode:
+                vTaskDelay(1000 / portTICK_PERIOD_MS);
+                psnee.modeDetected = true;
+                psnee.pu22mode = psnee.wfck_lows > 100;
+                DEBUG1(">> PsNee detected %s\n", psnee.pu22mode ? "PU-22 or newer" : "PU-20 or older");
+                state = WaitForQueue;
+                break;
             case WaitForQueue:
                 if(xQueueReceive(psnee.gpio_evt_queue, &io_num, portMAX_DELAY)) {
                     DEBUG1(">> PsNee injection starting ...\n");
@@ -222,7 +238,7 @@ void psnee_injector_task(void * pvParameters) {
     }
 }
 
-void psnee_setup(bool pu22mode) {
+void psnee_start() {
     gpio_pad_select_gpio(PSNEE_DATA);
     gpio_pad_select_gpio(PSNEE_GATE_WFCK);
     gpio_pad_select_gpio(PSNEE_SUBQ);
@@ -233,9 +249,9 @@ void psnee_setup(bool pu22mode) {
     gpio_set_direction(PSNEE_SUBQ, GPIO_MODE_INPUT); // PSX subchannel bits
     gpio_set_direction(PSNEE_SQCK, GPIO_MODE_INPUT); // PSX subchannel clock
 
-    psnee.pu22mode = pu22mode;
     psnee.gpio_evt_queue = xQueueCreate(1, sizeof(uint32_t));
     psnee.event_tx_prev = esp_timer_get_time();
+
     //xTaskCreatePinnedToCore(psnee_injector_task, "PsNee", 2048, NULL, 10, NULL, 0);
     xTaskCreate(psnee_injector_task, "PsNee", 2048, NULL, 10, NULL);
     gpio_set_intr_type((gpio_num_t) PSNEE_SQCK, GPIO_INTR_POSEDGE);
@@ -244,7 +260,7 @@ void psnee_setup(bool pu22mode) {
     gpio_isr_handler_add((gpio_num_t) PSNEE_SQCK, psnee_sqck_handler, (void*) PSNEE_SQCK);
     gpio_isr_handler_add((gpio_num_t) PSNEE_GATE_WFCK, psnee_wfck_handler, (void*) PSNEE_GATE_WFCK);
 
-    DEBUG1(">> PsNee starting in %s mode\n", psnee.pu22mode ? "PU-22 and newer" : "PU-20 and older"); 
+    DEBUG1(">> PsNee starting...\n");
 }
 
 #endif
