@@ -6,7 +6,7 @@ The PsOne PAL BIOS Patch is not included.
 
 PsNee-ESP32 uses [esp-idf v3.3.1](https://github.com/espressif/esp-idf/tree/release/v3.3)
 
-The file containing PsNee is: [`main/psneeTask.h`](/chriz2600/PsNee-ESP32/blob/master/main/psneeTask.h)
+The file containing PsNee is: [`main/psneeTask.h`](https://github.com/chriz2600/PsNee-ESP32/blob/master/main/psneeTask.h)
 
 The main goal was to use as little resources as possible. Thus the original code was rewritten using interrupts and a freertos task.
 
